@@ -32,7 +32,6 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 }
 
 function LoadingScreen() {
-  // Daca loading dureaza mai mult de 4s, aratam buton de escape
   const [showEscape, setShowEscape] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setShowEscape(true), 4000);
