@@ -6,6 +6,13 @@ export default defineConfig({
   server: {
     port: 3000,
   },
+  resolve: {
+    extensions: [".tsx", ".ts", ".jsx", ".js"],
+  },
+  build: {
+    outDir: "dist",
+    sourcemap: false,
+  },
   esbuild: {
     target: "es2020",
   },
