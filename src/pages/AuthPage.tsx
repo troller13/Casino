@@ -6,6 +6,15 @@ type Mode = "login" | "register";
 
 export function AuthPage() {
   const { signIn, signUp, showToast } = useAppStore();
+
+  async function handleGoogleSignIn() {
+    const { supabase } = await import("../services/supabase");
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin + "/live" },
+    });
+    if (error) showToast("Eroare Google: " + error.message, "error");
+  }
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
@@ -76,6 +85,56 @@ export function AuthPage() {
           ))}
         </div>
 
+        {/* Google OAuth */}
+        <button
+          type="button"
+          onClick={handleGoogleSignIn}
+          style={{
+            width: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            background: "rgba(255,255,255,0.05)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: 10,
+            padding: "12px 0",
+            cursor: "pointer",
+            fontFamily: "'Syne', sans-serif",
+            fontSize: 14,
+            fontWeight: 600,
+            color: "#f0f4ff",
+            marginBottom: 12,
+            transition: "all 0.15s",
+          }}
+        >
+          <span style={{ fontSize: 18 }}>G</span>
+          Continuă cu Google
+        </button>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            marginBottom: 12,
+          }}
+        >
+          <div
+            style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }}
+          />
+          <span
+            style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 9,
+              color: "#3d4660",
+            }}
+          >
+            SAU
+          </span>
+          <div
+            style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.06)" }}
+          />
+        </div>
         <form onSubmit={handleSubmit} style={s.form}>
           {mode === "register" && (
             <div style={s.field}>

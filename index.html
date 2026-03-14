@@ -2,6 +2,17 @@
 <html lang="ro">
   <head>
     <meta charset="UTF-8" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#c8f135" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="BETZONE" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <meta name="description" content="Pariuri sportive și casino live" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BETZONE — Pariuri Live</title>
     <link
@@ -113,10 +124,83 @@
           transform: rotate(360deg);
         }
       }
+
+      /* ── Light mode overrides ─────────────────────────────────────── */
+      [data-theme="light"] body {
+        background: #f0f2f8 !important;
+        color: #0d1117 !important;
+      }
+      [data-theme="light"] header {
+        background: rgba(240, 242, 248, 0.95) !important;
+        border-bottom-color: rgba(0, 0, 0, 0.08) !important;
+      }
+      [data-theme="light"] .ticker-wrap,
+      [data-theme="light"] [style*="background: #0d1017"],
+      [data-theme="light"] [style*="background: #080a0f"],
+      [data-theme="light"] [style*="background: #0a0c14"],
+      [data-theme="light"] [style*="background: #0a0e18"] {
+        background: #ffffff !important;
+      }
+      [data-theme="light"] [style*="background: #111520"],
+      [data-theme="light"] [style*="background: #161b2e"] {
+        background: #f7f8fc !important;
+      }
+      [data-theme="light"] [style*="color: #f0f4ff"],
+      [data-theme="light"] [style*="color: #f0f4ff"] {
+        color: #0d1117 !important;
+      }
+      [data-theme="light"] [style*="color: #8892a4"] {
+        color: #4a5568 !important;
+      }
+      [data-theme="light"] [style*="color: #3d4660"] {
+        color: #94a3b8 !important;
+      }
+      [data-theme="light"] [style*="border: 1px solid rgba(255,255,255,0.06)"],
+      [data-theme="light"] [style*="border-color: rgba(255,255,255"] {
+        border-color: rgba(0, 0, 0, 0.08) !important;
+      }
+      [data-theme="light"] [style*="background: #06080c"] {
+        background: #f0f2f8 !important;
+      }
+      [data-theme="light"] [style*="background: #08"] {
+        background: #ffffff !important;
+      }
+      /* Keep accent colors in light mode */
+      [data-theme="light"] [style*="color: #c8f135"] {
+        color: #3a7d00 !important;
+      }
+      [data-theme="light"]
+        [style*="background: linear-gradient(135deg, #c8f135"] {
+        background: linear-gradient(135deg, #3a7d00, #2d6600) !important;
+        color: #ffffff !important;
+      }
+      /* Orb backgrounds hide in light mode */
+      [data-theme="light"] .orb {
+        display: none;
+      }
+      /* Input backgrounds */
+      [data-theme="light"] input,
+      [data-theme="light"] textarea {
+        background: #ffffff !important;
+        color: #0d1117 !important;
+        border-color: rgba(0, 0, 0, 0.12) !important;
+      }
     </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js")
+            .then((reg) => {
+              console.log("[SW] Registered:", reg.scope);
+            })
+            .catch((err) => console.warn("[SW] Failed:", err));
+        });
+      }
+    </script>
   </body>
 </html>

@@ -1,52 +1,97 @@
-import React, { useState } from 'react';
-import { useAppStore } from '../store/AppStore';
+import React, { useState } from "react";
+import { useAppStore } from "../store/AppStore";
+import type { CreateSportBetInput } from "../services/supabase.ts";
 
 interface Props {
   onBetPlaced: (stake: number, totalOdds: number, win: number) => void;
+  // Context despre meciul curent (vine din LivePage)
+  currentMatchContext?: {
+    matchId: string;
+    sportKey: string;
+    homeTeam: string;
+    awayTeam: string;
+    commenceTime: string;
+  };
 }
 
-export function BetSlip({ onBetPlaced }: Props) {
-  const { state, removeSelection, clearSelections, placeBet, totalOdds, potentialWin, showToast } = useAppStore();
-  const [stake, setStake] = useState('');
+export function BetSlip({ onBetPlaced, currentMatchContext }: Props) {
+  const {
+    state,
+    removeSelection,
+    clearSelections,
+    totalOdds,
+    potentialWin,
+    placeSportBet,
+    showToast,
+  } = useAppStore();
+  const [stake, setStake] = useState("");
+  const [placing, setPlacing] = useState(false);
 
   const stakeNum = parseFloat(stake) || 0;
   const win = potentialWin(stakeNum);
+  const hasSelections = state.selections.length > 0;
 
-  function handlePlaceBet() {
+  async function handlePlaceBet() {
     if (!state.selections.length) {
-      showToast('⚠️ Adaugă cel puțin o selecție!', 'error');
+      showToast("⚠️ Adaugă cel puțin o selecție!", "error");
       return;
     }
     if (stakeNum < 1) {
-      showToast('⚠️ Suma minimă este 1 RON!', 'error');
+      showToast("⚠️ Suma minimă este 1 MDL!", "error");
       return;
     }
     if (stakeNum > state.balance) {
-      showToast('❌ Sold insuficient!', 'error');
+      showToast("❌ Sold insuficient!", "error");
       return;
     }
-    placeBet(stakeNum);
-    onBetPlaced(stakeNum, totalOdds, win);
-    setStake('');
-  }
 
-  const hasSelections = state.selections.length > 0;
+    setPlacing(true);
+
+    // Construieste inputul pentru sport_bets
+    // Folosim prima selectie pentru datele meciului (sau contextul primit)
+    const firstSel = state.selections[0];
+    const ctx = currentMatchContext;
+
+    const betInput: Omit<CreateSportBetInput, "user_id"> = {
+      sport_key: ctx?.sportKey ?? "soccer_epl",
+      match_id: ctx?.matchId ?? firstSel.matchId,
+      home_team: ctx?.homeTeam ?? firstSel.matchLabel.split(" vs ")[0] ?? "",
+      away_team: ctx?.awayTeam ?? firstSel.matchLabel.split(" vs ")[1] ?? "",
+      commence_time: ctx?.commenceTime ?? new Date().toISOString(),
+      selections: state.selections,
+      total_odds: totalOdds,
+      stake: stakeNum,
+      potential_win: win,
+    };
+
+    const ok = await placeSportBet(betInput);
+
+    if (ok) {
+      onBetPlaced(stakeNum, totalOdds, win);
+      setStake("");
+      showToast(
+        `✅ Pariu plasat! Câștig potențial: ${win.toFixed(2)} MDL`,
+        "success",
+      );
+    } else {
+      showToast("❌ Eroare la plasarea pariului!", "error");
+    }
+
+    setPlacing(false);
+  }
 
   return (
     <div style={styles.wrap}>
-      {/* Header */}
       <div style={styles.header}>
         <span style={styles.headerTitle}>🎯 BILET PARIU</span>
         <span style={styles.count}>{state.selections.length}</span>
       </div>
 
-      {/* Selections */}
       <div style={styles.items}>
         {!hasSelections && (
           <p style={styles.empty}>Selectează cote pentru a construi biletul</p>
         )}
-
-        {state.selections.map(sel => (
+        {state.selections.map((sel) => (
           <div key={sel.id} style={styles.selItem}>
             <div style={styles.selMatch}>{sel.matchLabel}</div>
             <div style={styles.selRow}>
@@ -63,7 +108,6 @@ export function BetSlip({ onBetPlaced }: Props) {
         ))}
       </div>
 
-      {/* Footer */}
       {hasSelections && (
         <div style={styles.footer}>
           <div style={styles.footerRow}>
@@ -74,8 +118,8 @@ export function BetSlip({ onBetPlaced }: Props) {
           <input
             type="number"
             value={stake}
-            onChange={e => setStake(e.target.value)}
-            placeholder="Sumă (RON)"
+            onChange={(e) => setStake(e.target.value)}
+            placeholder="Sumă (MDL)"
             min={1}
             style={styles.stakeInput}
           />
@@ -83,12 +127,16 @@ export function BetSlip({ onBetPlaced }: Props) {
           {stakeNum > 0 && (
             <div style={{ ...styles.footerRow, marginTop: 4 }}>
               <span style={styles.footerLabel}>Câștig potențial</span>
-              <span style={styles.potWin}>{win.toFixed(2)} RON</span>
+              <span style={styles.potWin}>{win.toFixed(2)} MDL</span>
             </div>
           )}
 
-          <button onClick={handlePlaceBet} style={styles.btnPlace}>
-            PLASEAZĂ PARIUL
+          <button
+            onClick={handlePlaceBet}
+            disabled={placing}
+            style={{ ...styles.btnPlace, opacity: placing ? 0.7 : 1 }}
+          >
+            {placing ? "⏳ SE PROCESEAZĂ..." : "PLASEAZĂ PARIUL"}
           </button>
 
           <button onClick={clearSelections} style={styles.btnClear}>
@@ -102,109 +150,159 @@ export function BetSlip({ onBetPlaced }: Props) {
 
 const styles: Record<string, React.CSSProperties> = {
   wrap: {
-    background: '#111520',
-    border: '1px solid rgba(255,255,255,0.06)',
-    borderRadius: 12, overflow: 'hidden',
+    background: "#111520",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    overflow: "hidden",
     marginTop: 8,
   },
   header: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '12px 16px',
-    background: 'linear-gradient(135deg, rgba(200,241,53,0.1), transparent)',
-    borderBottom: '1px solid rgba(255,255,255,0.06)',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "12px 16px",
+    background: "linear-gradient(135deg, rgba(200,241,53,0.1), transparent)",
+    borderBottom: "1px solid rgba(255,255,255,0.06)",
   },
   headerTitle: {
     fontFamily: "'Bebas Neue', cursive",
-    fontSize: 18, letterSpacing: 1, color: '#f0f4ff',
+    fontSize: 18,
+    letterSpacing: 1,
+    color: "#f0f4ff",
   },
   count: {
-    background: '#c8f135', color: '#06080c',
+    background: "#c8f135",
+    color: "#06080c",
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 11, fontWeight: 700,
-    width: 20, height: 20, borderRadius: '50%',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 11,
+    fontWeight: 700,
+    width: 20,
+    height: 20,
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   },
   items: {
-    padding: 12, display: 'flex', flexDirection: 'column', gap: 8,
+    padding: 12,
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
     minHeight: 80,
   },
   empty: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 11, color: '#3d4660',
-    textAlign: 'center', padding: '16px 0',
+    fontSize: 11,
+    color: "#3d4660",
+    textAlign: "center",
+    padding: "16px 0",
   },
   selItem: {
-    background: '#0d1017',
-    border: '1px solid rgba(255,255,255,0.06)',
-    borderRadius: 6, padding: '10px 12px',
-    animation: 'fadeInUp 0.25s ease',
+    background: "#0d1017",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: 6,
+    padding: "10px 12px",
+    animation: "fadeInUp 0.25s ease",
   },
   selMatch: {
     fontFamily: "'Syne', sans-serif",
-    fontSize: 11, fontWeight: 700, color: '#f0f4ff',
-    marginBottom: 6, paddingRight: 8,
+    fontSize: 11,
+    fontWeight: 700,
+    color: "#f0f4ff",
+    marginBottom: 6,
+    paddingRight: 8,
   },
   selRow: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   selPick: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 10, color: '#8892a4', flex: 1,
+    fontSize: 10,
+    color: "#8892a4",
+    flex: 1,
   },
   selOdd: {
     fontFamily: "'Bebas Neue', cursive",
-    fontSize: 20, color: '#c8f135', letterSpacing: 0.5, marginRight: 10,
+    fontSize: 20,
+    color: "#c8f135",
+    letterSpacing: 0.5,
+    marginRight: 10,
   },
   removeBtn: {
-    width: 18, height: 18, borderRadius: '50%',
-    background: '#ff2d55', color: '#fff',
-    border: 'none', cursor: 'pointer',
-    fontSize: 9, display: 'flex', alignItems: 'center', justifyContent: 'center',
-    flexShrink: 0, opacity: 0.8, transition: 'opacity 0.15s',
+    width: 18,
+    height: 18,
+    borderRadius: "50%",
+    background: "#ff2d55",
+    color: "#fff",
+    border: "none",
+    cursor: "pointer",
+    fontSize: 9,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
   },
   footer: {
-    borderTop: '1px solid rgba(255,255,255,0.06)',
-    padding: 12, display: 'flex', flexDirection: 'column', gap: 8,
+    borderTop: "1px solid rgba(255,255,255,0.06)",
+    padding: 12,
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
   },
   footerRow: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   footerLabel: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 10, color: '#8892a4',
+    fontSize: 10,
+    color: "#8892a4",
   },
   totalOdds: {
     fontFamily: "'Bebas Neue', cursive",
-    fontSize: 24, color: '#c8f135',
+    fontSize: 24,
+    color: "#c8f135",
   },
   potWin: {
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 13, color: '#ffd23f', fontWeight: 700,
+    fontSize: 13,
+    color: "#ffd23f",
+    fontWeight: 700,
   },
   stakeInput: {
-    width: '100%',
-    background: '#080a0f',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 6, color: '#f0f4ff',
-    padding: '10px 12px',
+    width: "100%",
+    background: "#080a0f",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: 6,
+    color: "#f0f4ff",
+    padding: "10px 12px",
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 14, outline: 'none',
-    boxSizing: 'border-box',
+    fontSize: 14,
+    outline: "none",
+    boxSizing: "border-box" as const,
   },
   btnPlace: {
-    width: '100%',
-    background: 'linear-gradient(135deg, #c8f135, #a8d400)',
-    color: '#06080c',
+    width: "100%",
+    background: "linear-gradient(135deg, #c8f135, #a8d400)",
+    color: "#06080c",
     fontFamily: "'Bebas Neue', cursive",
-    fontSize: 19, letterSpacing: 2,
-    padding: 12, border: 'none', borderRadius: 6,
-    cursor: 'pointer', transition: 'all 0.16s',
+    fontSize: 19,
+    letterSpacing: 2,
+    padding: 12,
+    border: "none",
+    borderRadius: 6,
+    cursor: "pointer",
   },
   btnClear: {
-    background: 'none', border: 'none',
-    color: '#3d4660',
+    background: "none",
+    border: "none",
+    color: "#3d4660",
     fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 10, cursor: 'pointer',
-    textAlign: 'center', transition: 'color 0.15s',
+    fontSize: 10,
+    cursor: "pointer",
+    textAlign: "center" as const,
   },
 };

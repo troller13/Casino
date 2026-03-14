@@ -17,8 +17,26 @@ import {
   updateBalance,
   recordBet,
   IS_SUPABASE_CONFIGURED,
+  createSportBet,
+  getAllSportBets,
+  getPendingSportBets,
+  settleSportBet,
   type UserProfile,
   type BetRecord,
+  type CreateSportBetInput,
+} from "../services/supabase";
+import { fetchScores, determineWinner } from "../services/api";
+import type { SportBet, MatchScore } from "../types/index.ts";
+import {
+  getUserBonuses,
+  claimBonus,
+  type UserBonus,
+} from "../services/supabase";
+import { processBonusTrigger, checkDailyLogin } from "../services/bonusService";
+import {
+  addXP,
+  addBalancePoint,
+  upsertLeaderboardEntry,
 } from "../services/supabase";
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -31,6 +49,11 @@ interface AppState {
   balance: number;
   selections: Selection[];
   toasts: ToastMessage[];
+  sportBets: SportBet[];
+  checkingResults: boolean;
+  bonuses: UserBonus[];
+  bonusLoading: boolean;
+  xpTotal: number;
 }
 
 const initialState: AppState = {
@@ -41,6 +64,11 @@ const initialState: AppState = {
   balance: 0,
   selections: [],
   toasts: [],
+  sportBets: [],
+  checkingResults: false,
+  bonuses: [],
+  bonusLoading: false,
+  xpTotal: 0,
 };
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -54,7 +82,14 @@ type Action =
   | { type: "SET_BALANCE"; balance: number }
   | { type: "ADJUST_BALANCE"; delta: number } // +/- față de curent
   | { type: "ADD_TOAST"; toast: ToastMessage }
-  | { type: "REMOVE_TOAST"; id: string };
+  | { type: "REMOVE_TOAST"; id: string }
+  | { type: "SET_SPORT_BETS"; bets: SportBet[] }
+  | { type: "ADD_SPORT_BET"; bet: SportBet }
+  | { type: "UPDATE_SPORT_BET"; bet: SportBet }
+  | { type: "SET_CHECKING_RESULTS"; value: boolean }
+  | { type: "SET_BONUSES"; bonuses: UserBonus[] }
+  | { type: "UPDATE_BONUS"; bonus: UserBonus }
+  | { type: "SET_BONUS_LOADING"; value: boolean };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -95,6 +130,30 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, balance: Math.max(0, action.balance) };
     case "ADJUST_BALANCE":
       return { ...state, balance: Math.max(0, state.balance + action.delta) };
+    case "SET_SPORT_BETS":
+      return { ...state, sportBets: action.bets };
+    case "ADD_SPORT_BET":
+      return { ...state, sportBets: [action.bet, ...state.sportBets] };
+    case "UPDATE_SPORT_BET":
+      return {
+        ...state,
+        sportBets: state.sportBets.map((b) =>
+          b.id === action.bet.id ? action.bet : b,
+        ),
+      };
+    case "SET_CHECKING_RESULTS":
+      return { ...state, checkingResults: action.value };
+    case "SET_BONUSES":
+      return { ...state, bonuses: action.bonuses };
+    case "UPDATE_BONUS":
+      return {
+        ...state,
+        bonuses: state.bonuses.map((b) =>
+          b.id === action.bonus.id ? action.bonus : b,
+        ),
+      };
+    case "SET_BONUS_LOADING":
+      return { ...state, bonusLoading: action.value };
     case "ADD_TOAST":
       return { ...state, toasts: [...state.toasts, action.toast] };
     case "REMOVE_TOAST":
@@ -134,6 +193,19 @@ interface AppContextValue {
     winAmount: number,
     details?: Record<string, unknown>,
   ) => void;
+  // Sport bets
+  placeSportBet: (
+    input: Omit<CreateSportBetInput, "user_id">,
+  ) => Promise<boolean>;
+  loadSportBets: () => Promise<void>;
+  checkResults: () => Promise<{ settled: number; won: number }>;
+  // Bonuses
+  loadBonuses: () => Promise<void>;
+  claimUserBonus: (bonusId: string) => Promise<void>;
+  triggerBonusAction: (
+    action: string,
+    metadata?: Record<string, unknown>,
+  ) => Promise<void>;
   showToast: (text: string, type: ToastMessage["type"]) => void;
 }
 
@@ -292,10 +364,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const casinoDeduct = useCallback(
     async (amount: number): Promise<boolean> => {
       const current = balanceRef.current;
-      if (amount > current) return false; // sold insuficient
+      if (amount > current) return false;
       const newBalance = current - amount;
       dispatch({ type: "SET_BALANCE", balance: newBalance });
       await persistBalance(newBalance);
+      // Trigger casino bonus
+      const userId = userRef.current?.id;
+      if (userId) {
+        await processBonusTrigger(userId, "casino_bet_placed", { amount });
+        const bonuses = await getUserBonuses(userId);
+        dispatch({ type: "SET_BONUSES", bonuses });
+      }
       return true;
     },
     [persistBalance],
@@ -307,6 +386,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const newBalance = balanceRef.current + amount;
       dispatch({ type: "SET_BALANCE", balance: newBalance });
       await persistBalance(newBalance);
+      const userId = userRef.current?.id;
+      if (userId) {
+        await addBalancePoint(userId, newBalance, amount, "casino_win");
+        await addXP(userId, 5 + Math.min(20, Math.floor(amount / 10)));
+      }
     },
     [persistBalance],
   );
@@ -328,6 +412,266 @@ export function AppProvider({ children }: { children: ReactNode }) {
         win_amount: winAmount,
         details,
       });
+    },
+    [],
+  );
+
+  // ── Sport bet actions ────────────────────────────────────────────────────────
+
+  const placeSportBet = useCallback(
+    async (input: Omit<CreateSportBetInput, "user_id">): Promise<boolean> => {
+      const userId = userRef.current?.id;
+      if (!userId) return false;
+
+      // Verifica sold
+      if (input.stake > balanceRef.current) return false;
+
+      // Scade soldul imediat
+      const newBalance = balanceRef.current - input.stake;
+      dispatch({ type: "SET_BALANCE", balance: newBalance });
+      await persistBalance(newBalance);
+
+      // Salveaza pariul in DB
+      const bet = await createSportBet({ ...input, user_id: userId });
+      if (bet) {
+        dispatch({ type: "ADD_SPORT_BET", bet });
+      }
+
+      // Trigger bonus checks
+      await processBonusTrigger(userId, "sport_bet_placed", {
+        amount: input.stake,
+      });
+      // Add XP (10 XP per bet + 1 XP per MDL staked up to 50)
+      const xpGain = 10 + Math.min(50, Math.floor(input.stake));
+      await addXP(userId, xpGain);
+      // Record balance history
+      await addBalancePoint(
+        userId,
+        balanceRef.current,
+        -input.stake,
+        "bet_placed",
+      );
+      const bonuses = await getUserBonuses(userId);
+      dispatch({ type: "SET_BONUSES", bonuses });
+
+      return true;
+    },
+    [persistBalance],
+  );
+
+  const loadSportBets = useCallback(async (): Promise<void> => {
+    const userId = userRef.current?.id;
+    if (!userId) return;
+    const bets = await getAllSportBets(userId);
+    dispatch({ type: "SET_SPORT_BETS", bets });
+  }, []);
+
+  // Verifica rezultatele pariurilor pending si crediteaza castigurile
+  const checkResults = useCallback(async (): Promise<{
+    settled: number;
+    won: number;
+  }> => {
+    const userId = userRef.current?.id;
+    if (!userId) return { settled: 0, won: 0 };
+
+    dispatch({ type: "SET_CHECKING_RESULTS", value: true });
+
+    const apiKey = localStorage.getItem("betzone_api_key") || "";
+    if (!apiKey) {
+      dispatch({ type: "SET_CHECKING_RESULTS", value: false });
+      return { settled: 0, won: 0 };
+    }
+
+    // Ia pariurile pending
+    const pendingBets = await getPendingSportBets(userId);
+    if (!pendingBets.length) {
+      dispatch({ type: "SET_CHECKING_RESULTS", value: false });
+      return { settled: 0, won: 0 };
+    }
+
+    // Grupeaza dupa sport_key pentru a face mai putine request-uri API
+    const bySport = pendingBets.reduce<Record<string, typeof pendingBets>>(
+      (acc, bet) => {
+        if (!acc[bet.sport_key]) acc[bet.sport_key] = [];
+        acc[bet.sport_key].push(bet);
+        return acc;
+      },
+      {},
+    );
+
+    let settled = 0;
+    let won = 0;
+
+    for (const [sportKey, bets] of Object.entries(bySport)) {
+      let scores: MatchScore[] = [];
+      try {
+        scores = await fetchScores(apiKey, sportKey, 3);
+      } catch {
+        continue; // skip sport daca API da eroare
+      }
+
+      for (const bet of bets) {
+        // Gaseste scorul pentru meciul din pariu
+        const score = scores.find((s) => s.id === bet.match_id);
+        if (!score || !score.completed) continue; // meciul nu s-a terminat
+
+        const winner = determineWinner(score);
+        if (winner === null) continue;
+
+        // Verifica daca pariul e castigat
+        // Fiecare selectie trebuie sa fie corecta (pariu combinat)
+        let allCorrect = true;
+        for (const sel of bet.selections) {
+          const pickLabel = sel.pickLabel; // '1' | 'X' | '2'
+          const isCorrect =
+            (pickLabel === "1" && winner === "home") ||
+            (pickLabel === "2" && winner === "away") ||
+            (pickLabel === "X" && winner === "draw");
+          if (!isCorrect) {
+            allCorrect = false;
+            break;
+          }
+        }
+
+        const status = allCorrect ? "won" : "lost";
+        const actualWin = allCorrect ? bet.potential_win : 0;
+
+        // Scorul final
+        const homeScore =
+          score.scores?.find((s) => s.name === score.home_team)?.score ?? null;
+        const awayScore =
+          score.scores?.find((s) => s.name === score.away_team)?.score ?? null;
+
+        // Actualizeaza in DB
+        await settleSportBet(
+          bet.id,
+          status,
+          actualWin,
+          homeScore ?? undefined,
+          awayScore ?? undefined,
+        );
+
+        // Daca a castigat, crediteaza soldul
+        if (allCorrect && actualWin > 0) {
+          const newBalance = balanceRef.current + actualWin;
+          dispatch({ type: "SET_BALANCE", balance: newBalance });
+          await persistBalance(newBalance);
+          won += actualWin;
+          // Trigger first win bonus + XP
+          if (userId) {
+            await processBonusTrigger(userId, "sport_bet_won", {
+              amount: actualWin,
+            });
+            const winXP = 25 + Math.min(100, Math.floor(actualWin / 10));
+            await addXP(userId, winXP);
+            await addBalancePoint(
+              userId,
+              balanceRef.current,
+              actualWin,
+              "bet_won",
+            );
+            // Update leaderboard
+            const totalBets = await import("../services/supabase.ts").then(
+              (m) => m.getActivityCount(userId, "sport_bet_placed"),
+            );
+            await upsertLeaderboardEntry({
+              user_id: userId,
+              username: userRef.current
+                ? ((
+                    await import("../services/supabase.ts").then((m) =>
+                      m.getProfile(userId),
+                    )
+                  )?.username ?? "")
+                : "",
+              week_start: "",
+              profit: balanceRef.current - 1000,
+              wins: settled + (allCorrect ? 1 : 0),
+              total_bets: totalBets,
+              win_rate: 0,
+              xp: 0,
+            });
+          }
+        }
+
+        // Actualizeaza in store
+        dispatch({
+          type: "UPDATE_SPORT_BET",
+          bet: {
+            ...bet,
+            status,
+            actual_win: actualWin,
+            result_home: homeScore,
+            result_away: awayScore,
+            settled_at: new Date().toISOString(),
+          },
+        });
+
+        settled++;
+      }
+    }
+
+    dispatch({ type: "SET_CHECKING_RESULTS", value: false });
+    return { settled, won };
+  }, [persistBalance]);
+
+  // ── Bonus actions ────────────────────────────────────────────────────────────
+
+  const loadBonuses = useCallback(async (): Promise<void> => {
+    const userId = userRef.current?.id;
+    if (!userId) return;
+    dispatch({ type: "SET_BONUS_LOADING", value: true });
+    const bonuses = await getUserBonuses(userId);
+    dispatch({ type: "SET_BONUSES", bonuses });
+    dispatch({ type: "SET_BONUS_LOADING", value: false });
+  }, []);
+
+  const claimUserBonus = useCallback(
+    async (bonusId: string): Promise<void> => {
+      const userId = userRef.current?.id;
+      if (!userId) return;
+      const amount = await claimBonus(bonusId, userId);
+      if (amount !== null) {
+        const newBalance = balanceRef.current + amount;
+        dispatch({ type: "SET_BALANCE", balance: newBalance });
+        await persistBalance(newBalance);
+        // Refresh bonuses
+        const bonuses = await getUserBonuses(userId);
+        dispatch({ type: "SET_BONUSES", bonuses });
+        showToast(`🎁 Bonus de ${amount} MDL revendicat!`, "success");
+      } else {
+        showToast("⚠️ Bonusul nu poate fi revendicat încă!", "error");
+      }
+    },
+    [persistBalance],
+  );
+
+  const triggerBonusAction = useCallback(
+    async (
+      action: string,
+      metadata: Record<string, unknown> = {},
+    ): Promise<void> => {
+      const userId = userRef.current?.id;
+      if (!userId) return;
+      const unlocked = await processBonusTrigger(
+        userId,
+        action as Parameters<typeof processBonusTrigger>[1],
+        metadata,
+      );
+      if (unlocked.length > 0) {
+        // Refresh bonuses and notify
+        const bonuses = await getUserBonuses(userId);
+        dispatch({ type: "SET_BONUSES", bonuses });
+        unlocked.forEach(() => {
+          showToast(
+            "🎁 Bonus nou disponibil! Mergi la BONUSURI pentru a-l revendica.",
+            "success",
+          );
+        });
+      } else {
+        // Still refresh to update progress
+        const bonuses = await getUserBonuses(userId);
+        dispatch({ type: "SET_BONUSES", bonuses });
+      }
     },
     [],
   );
@@ -361,6 +705,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         casinoDeduct,
         casinoWin,
         saveCasinoBet,
+        placeSportBet,
+        loadSportBets,
+        checkResults,
+        loadBonuses,
+        claimUserBonus,
+        triggerBonusAction,
         showToast,
       }}
     >

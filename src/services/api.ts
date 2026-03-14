@@ -1,5 +1,5 @@
 import { API_BASE } from "./config";
-import type { Match, ExtractedOdds, OddsStats } from "../types";
+import type { Match, ExtractedOdds, OddsStats } from "../types/index.ts";
 
 export class ApiError extends Error {
   constructor(
@@ -90,4 +90,48 @@ export function computeStats(matches: Match[]): OddsStats | null {
     max: max.toFixed(2),
     avg: avg.toFixed(2),
   };
+}
+
+// ─── Scores API ───────────────────────────────────────────────────────────────
+
+import type { MatchScore } from "../types/index.ts";
+
+export async function fetchScores(
+  apiKey: string,
+  sportKey: string,
+  daysFrom = 3,
+): Promise<MatchScore[]> {
+  const url = new URL(`${API_BASE}/sports/${sportKey}/scores`);
+  url.searchParams.set("apiKey", apiKey);
+  url.searchParams.set("daysFrom", String(daysFrom));
+
+  const res = await fetch(url.toString());
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new ApiError(
+      (err as { message?: string }).message ?? `HTTP ${res.status}`,
+      res.status,
+    );
+  }
+  return res.json() as Promise<MatchScore[]>;
+}
+
+// Determina castigatorul dintr-un MatchScore
+export function determineWinner(
+  score: MatchScore,
+): "home" | "away" | "draw" | null {
+  if (!score.completed || !score.scores) return null;
+
+  const homeScore = score.scores.find((s) => s.name === score.home_team);
+  const awayScore = score.scores.find((s) => s.name === score.away_team);
+
+  if (!homeScore?.score || !awayScore?.score) return null;
+
+  const h = parseFloat(homeScore.score);
+  const a = parseFloat(awayScore.score);
+
+  if (isNaN(h) || isNaN(a)) return null;
+  if (h > a) return "home";
+  if (a > h) return "away";
+  return "draw";
 }

@@ -1,15 +1,23 @@
 import React from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import { useTheme, useThemedStyles } from "../store/ThemeContext";
 import { useAppStore } from "../store/AppStore";
 
 const NAV_ITEMS = [
   { to: "/live", label: "⚡ LIVE" },
   { to: "/prematch", label: "📅 PRE-MATCH" },
   { to: "/casino", label: "🎰 CASINO" },
+  { to: "/my-bets", label: "🎯 PARIURILE MELE" },
+  { to: "/bonuses", label: "🎁 BONUSURI" },
+  { to: "/stats", label: "📊 STATISTICI" },
+  { to: "/wallet", label: "💳 PORTOFEL" },
+  { to: "/achievements", label: "🏆 REALIZĂRI" },
 ];
 
 export function Header() {
   const { state, signOut, showToast } = useAppStore();
+  const { theme, toggleTheme } = useTheme();
+  const t = useThemedStyles();
   const navigate = useNavigate();
 
   const fmtBalance = (n: number) =>
@@ -38,22 +46,54 @@ export function Header() {
 
         {/* Nav */}
         <nav style={styles.nav}>
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              style={({ isActive }) => ({
-                ...styles.navLink,
-                ...(isActive ? styles.navLinkActive : {}),
-                ...(item.to === "/casino" ? styles.navLinkCasino : {}),
-                ...(isActive && item.to === "/casino"
-                  ? styles.navLinkCasinoActive
-                  : {}),
-              })}
-            >
-              {item.label}
-            </NavLink>
-          ))}
+          {NAV_ITEMS.map((item) => {
+            const readyBonuses =
+              item.to === "/bonuses"
+                ? (state.bonuses ?? []).filter(
+                    (b: { status: string; progress: number; target: number }) =>
+                      b.status === "available" && b.progress >= b.target,
+                  ).length
+                : 0;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                style={({ isActive }) => ({
+                  ...styles.navLink,
+                  ...(isActive ? styles.navLinkActive : {}),
+                  ...(item.to === "/casino" ? styles.navLinkCasino : {}),
+                  ...(isActive && item.to === "/casino"
+                    ? styles.navLinkCasinoActive
+                    : {}),
+                  position: "relative" as const,
+                })}
+              >
+                {item.label}
+                {readyBonuses > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: -5,
+                      right: -6,
+                      background: "#ff2d55",
+                      color: "#fff",
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 8,
+                      fontWeight: 700,
+                      width: 15,
+                      height: 15,
+                      borderRadius: "50%",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    {readyBonuses}
+                  </span>
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
 
         {/* Right side */}
@@ -88,6 +128,13 @@ export function Header() {
               </NavLink>
 
               <button
+                onClick={toggleTheme}
+                style={styles.btnTheme}
+                title="Schimbă tema"
+              >
+                {theme === "dark" ? "☀️" : "🌙"}
+              </button>
+              <button
                 onClick={handleSignOut}
                 style={styles.btnLogout}
                 title="Deconectare"
@@ -112,9 +159,9 @@ const styles: Record<string, React.CSSProperties> = {
     top: 0,
     zIndex: 100,
     height: 64,
-    background: "rgba(6,8,12,0.96)",
+    background: "var(--bg-surface, rgba(6,8,12,0.96))",
     backdropFilter: "blur(20px)",
-    borderBottom: "1px solid rgba(255,255,255,0.06)",
+    borderBottom: "1px solid var(--border-col, rgba(255,255,255,0.06))",
   },
   inner: {
     maxWidth: 1600,
@@ -170,7 +217,9 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: 1.5,
     color: "#8892a4",
     background: "none",
-    border: "1px solid transparent",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "transparent",
     borderRadius: 6,
     cursor: "pointer",
     transition: "all 0.18s ease",
@@ -180,12 +229,21 @@ const styles: Record<string, React.CSSProperties> = {
   navLinkActive: {
     color: "#c8f135",
     background: "rgba(200,241,53,0.08)",
+    borderWidth: 1,
+    borderStyle: "solid",
     borderColor: "rgba(200,241,53,0.25)",
   },
-  navLinkCasino: { color: "#ff6b2b" },
+  navLinkCasino: {
+    color: "#ff6b2b",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "transparent",
+  },
   navLinkCasinoActive: {
     color: "#ff6b2b",
     background: "rgba(255,107,43,0.1)",
+    borderWidth: 1,
+    borderStyle: "solid",
     borderColor: "rgba(255,107,43,0.35)",
     boxShadow: "0 0 14px rgba(255,107,43,0.15)",
   },
@@ -254,6 +312,19 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     fontWeight: 700,
     color: "#f0f4ff",
+  },
+  btnTheme: {
+    background: "none",
+    border: "1px solid rgba(255,255,255,0.06)",
+    borderRadius: 6,
+    fontSize: 16,
+    cursor: "pointer",
+    width: 34,
+    height: 34,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    transition: "all 0.15s",
   },
   btnLogout: {
     background: "none",

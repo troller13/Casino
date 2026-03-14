@@ -7,6 +7,14 @@ import { AuthPage } from "./pages/AuthPage";
 import { LivePage } from "./pages/LivePage";
 import { CasinoRoute } from "./pages/CasinoRoute";
 import { ProfilePage } from "./pages/ProfilePage";
+import { MyBetsPage } from "./pages/MyBetsPage";
+import { BonusesPage } from "./pages/BonusesPage";
+import { StatsPage } from "./pages/StatsPage";
+import { WalletPage } from "./pages/WalletPage";
+import { AchievementsPage } from "./pages/AchievementsPage";
+import { AdminPage } from "./pages/admin/AdminPage";
+import { QuickBetOverlay } from "./components/QuickBet";
+import { FloatingChat } from "./components/FloatingChat";
 import { useAppStore } from "./store/AppStore";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -207,11 +215,61 @@ export default function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/my-bets"
+            element={
+              <ProtectedRoute>
+                <MyBetsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/bonuses"
+            element={
+              <ProtectedRoute>
+                <BonusesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/stats"
+            element={
+              <ProtectedRoute>
+                <StatsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/wallet"
+            element={
+              <ProtectedRoute>
+                <WalletPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/achievements"
+            element={
+              <ProtectedRoute>
+                <AchievementsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <AdminPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="*" element={<Navigate to="/live" replace />} />
         </Routes>
       </div>
 
       <ToastContainer />
+      <QuickBetOverlay />
+      <FloatingChat />
       <style>{globalKeyframes}</style>
     </div>
   );

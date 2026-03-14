@@ -1,0 +1,17 @@
+{
+  "name": "BETZONE — Pariuri Live",
+  "short_name": "BETZONE",
+  "description": "Pariuri sportive și casino în timp real",
+  "start_url": "/live",
+  "display": "standalone",
+  "background_color": "#06080c",
+  "theme_color": "#c8f135",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "screenshots": [],
+  "categories": ["entertainment", "games"],
+  "lang": "ro"
+}

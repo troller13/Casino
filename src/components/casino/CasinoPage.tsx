@@ -3,7 +3,15 @@ import { Blackjack } from "./Blackjack";
 import { SlotMachine } from "./SlotMachine";
 import { Roulette } from "./Roulette";
 import { Plinko } from "./Plinko";
-type CasinoGame = "lobby" | "blackjack" | "slots" | "roulette" | "plinko";
+import { Aviator } from "./Aviator";
+
+type CasinoGame =
+  | "lobby"
+  | "blackjack"
+  | "slots"
+  | "roulette"
+  | "plinko"
+  | "aviator";
 
 interface GameCard {
   id: CasinoGame;
@@ -65,6 +73,18 @@ const GAMES: GameCard[] = [
     border: "rgba(0,229,255,0.2)",
     badge: "NOU",
   },
+  {
+    id: "aviator",
+    title: "AVIATOR",
+    subtitle: "Cash out înainte să se prăbușească",
+    emoji: "🛩️",
+    rtp: "97%",
+    minBet: 5,
+    color: "#ff6b2b",
+    bg: "radial-gradient(ellipse at top, #1a0800, #06080c)",
+    border: "rgba(255,107,43,0.3)",
+    badge: "HOT",
+  },
 ];
 
 export function CasinoPage() {
@@ -84,6 +104,7 @@ export function CasinoPage() {
           {activeGame === "slots" && <SlotMachine />}
           {activeGame === "roulette" && <Roulette />}
           {activeGame === "plinko" && <Plinko />}
+          {activeGame === "aviator" && <Aviator />}
         </div>
       </div>
     );
