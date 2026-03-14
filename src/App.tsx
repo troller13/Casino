@@ -12,7 +12,7 @@ import { BonusesPage } from "./pages/BonusesPage";
 import { StatsPage } from "./pages/StatsPage";
 import { WalletPage } from "./pages/WalletPage";
 import { AchievementsPage } from "./pages/AchievementsPage";
-import { AdminPage } from "./pages/admin/AdminPage";
+// import { AdminPage } from "./pages/admin/AdminPage";
 import { QuickBetOverlay } from "./components/QuickBet";
 import { FloatingChat } from "./components/FloatingChat";
 import { useAppStore } from "./store/AppStore";
@@ -254,14 +254,14 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route
+          {/* <Route
             path="/admin"
             element={
               <ProtectedRoute>
                 <AdminPage />
               </ProtectedRoute>
             }
-          />
+          /> */}
           <Route path="*" element={<Navigate to="/live" replace />} />
         </Routes>
       </div>
